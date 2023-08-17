@@ -1,0 +1,23 @@
+;; shadow-cljs configuration
+{:lein true
+ ;; set an nrepl port for connection to a REPL.
+ :nrepl        {:port 8777}
+
+ :builds
+ {:app {:target :browser
+        :output-dir "resources/public/js/compiled"
+        :asset-path "/js/compiled"
+
+        :modules
+        {:main
+         {:entries [midas.frontend.main.core]}}
+
+        :devtools
+        ;; before live-reloading any code call this function
+        {:before-load midas.frontend.main.core/stop
+         ;; after live-reloading finishes call this function
+         :after-load midas.frontend.main.core/start
+         ;; serve the public directory over http at port 8700
+         :http-root    "resources/public"
+         :http-port    8700
+         :preloads     [devtools.preload]}}}}
