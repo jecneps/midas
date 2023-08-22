@@ -8,7 +8,8 @@
                  [ring/ring-core "1.8.2"]
                  [reagent "1.2.0"]
                  [metosin/reitit "0.5.11"]
-                 [re-frame "1.3.0"]]
+                 [re-frame "1.3.0"]
+                 [lambdaisland/fetch "1.3.74"]]
   :main ^:skip-aot midas.backend.main.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

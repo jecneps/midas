@@ -1,0 +1,1 @@
+{"2" {:amount 3, :description "milk", :date "2019-01-03", :tags [:food :groceries], :id "2"}, "3" {:amount 7, :description "atm", :date "2019-01-03", :tags [:atm], :id "3"}, "4" {:amount 7, :description "atm", :date "2019-01-03", :tags [:atm], :id "4"}}
