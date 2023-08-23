@@ -1,1 +1,1 @@
-{:food {:regexps []} :groceries {:regexps []} :coffee {:regexps []} :atm {:regexps []}}
+{:food {:regexps []} :groceries {:regexps []} :coffee {:regexps []} :atm {:regexps []} :illegal-drugs {:regexps []}}

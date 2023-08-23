@@ -6,6 +6,7 @@
             [lambdaisland.fetch :as fetch]
             [cljs.reader :refer [read-string]]
             [midas.frontend.components.itemFeed.core :refer [feed]]
+            [midas.frontend.components.grid-view.core :refer [Grid-view]]
             [midas.router.core :refer [routes]]))
 
 ;; define your app data so that it doesn't get over-written on reload
@@ -13,13 +14,85 @@
 (def DUMMY_DATA {1 {:amount 1 :description "coffee" :date "2019-01-01" :tags [:food :coffee] :id 1}
                  2 {:amount 2 :description "tea" :date "2019-01-02" :tags [:food] :id 2}
                  3 {:amount 3 :description "milk" :date "2019-01-03" :tags [:food :groceries] :id 3}
-                 4 {:amount 7 :description "atm" :date "2019-01-03" :tags [:atm]} :id 4})
+                 4 {:amount 7 :description "atm" :date "2019-01-03" :tags [:atm] :id 4}})
+
+(def D_DATA [{:amount 1 :description "coffee" :date "2019-01-01" :tags [:food :coffee]}
+             {:amount 2 :description "tea" :date "2019-01-02" :tags [:food]}
+             {:amount 3 :description "milk" :date "2019-01-03" :tags [:food :groceries]}
+             {:amount 7 :description "atm" :date "2019-01-03" :tags [:atm]}])
+
+
+(def BIG_DUMMY_DATA (reduce (fn [m [indx item]]
+                              (assoc m indx (assoc item :id indx)))
+                            {}
+                            (map-indexed vector (flatten (for [year ["2019" "2020" "2021" "2022"]]
+                                                           (for [month ["01" "02" "03" "04"]]
+                                                             (map #(assoc % :date (str year "-" month "-15")) D_DATA)))))))
 
 (def router (r/router routes))
 
 ;;######################################################################
-;; API Stuff
+;; Misc Computation
 ;;######################################################################
+
+(defn group-data [grp-preds items depth]
+  (println "group-data: " grp-preds " " items " " depth)
+  (if (empty? grp-preds)
+    {:type :list
+     :depth depth
+     :data items}
+    (let [[[k pred dir] & rst] grp-preds]
+      {:type :group
+       :depth depth
+       :name k
+       :data (->> (group-by pred items)
+                  (sort-by (fn [[k _]] k))
+                  (map (fn [[k v]]
+                         [{:g-val k
+                           :depth (inc depth)
+                           :count (count v)
+                           :sum (apply + (map :amount v))}
+                          (group-data rst v (inc depth))])))})))
+
+(defn spacer-row [depth]
+  {:type :spacer
+   :depth depth})
+
+(defn group-row [g-vals n id collapsed?]
+  (merge {:name n
+          :type :group-header
+          :id id
+          :collapsed? collapsed?}
+         g-vals))
+
+(defn year [date]
+  (-> date
+      (clojure.string/split #"-")
+      first))
+
+(defn month [date]
+  (-> date
+      (clojure.string/split #"-")
+      second))
+
+(def g-preds [["Year" #(year (:date %)) :asc]
+              ["Month" #(month (:date %)) :asc]])
+
+(defn flatten-groups [collapsed? groups id-prefix]
+  (if (= :list (:type groups))
+
+    (concat (map #(assoc % :depth (:depth groups) :type :item)
+                 (:data groups))
+            [(spacer-row (:depth groups))])
+    (let [data (:data groups)]
+      (concat
+       (mapcat (fn [[g-data group]]
+                 (let [id (str id-prefix (:g-val g-data))]
+                   (if (contains? collapsed? id)
+                     [(group-row g-data (:name groups) id true)]
+                     (concat [(group-row g-data (:name groups) id false)] (flatten-groups collapsed? group id)))))
+               data)
+       [(spacer-row (:depth groups))]))))
 
 ;;######################################################################
 ;; Event Handlers
@@ -28,11 +101,13 @@
 (rf/reg-event-fx
  :initialize-db
  (fn [_ _]
-   {:db {:items DUMMY_DATA
+   {:db {:items BIG_DUMMY_DATA
          :active-filters [:coffee :food :groceries :atm]
          :tags {:tada {} :naha {}}
+         :groupings g-preds
+         :collapsed-groups #{}
          :route "/"}
-    :fx [[:dispatch [:api-call :api/read-line-items {} nil :update-items]]
+    :fx [;[:dispatch [:api-call :api/read-line-items {} nil :update-items]]
          [:dispatch [:api-call :api/read-tags {} nil :update-tags]]]}))
 
 (rf/reg-event-db
@@ -55,24 +130,17 @@
  (fn [_ [_ route]]
    {:navigate! route}))
 
-;; (rf/reg-event-db
-;;  :new-raw-items
-;;  (fn [db [_ new-items]]
-;;    (assoc db :new-item-state {:cur-item (first new-items)
-;;                               :remaining-items (rest new-items)})))
-
-;; (rf/reg-event-db
-;;  :add-item
-;;  (fn [db [_ item]]
-;;    (let [remaining-items (get-in db [:new-item-state :remaining-items])]
-;;      (-> (update db :items conj item)
-;;          (assoc :new-item-state {:cur-item (first remaining-items)
-;;                                  :remaining-items (rest remaining-items)})))))
-
 (rf/reg-event-fx
  :api-call
  (fn [coefx event]
    {:api-call (into [] (rest event))}))
+
+(rf/reg-event-db
+ :toggle-group-header
+ (fn [db [_ id]]
+   (if (contains? (:collapsed-groups db) id)
+     (update db :collapsed-groups disj id)
+     (update db :collapsed-groups conj id))))
 
 ;;######################################################################
 ;; Effect Handlers
@@ -87,18 +155,18 @@
 (rf/reg-fx
  :api-call
  (fn [[name params data event-id]]
-   (println (str "In :api-call effect handler, " name params data))
+   ;(println (str "In :api-call effect handler, " name params data))
    (if-let [match (r/match-by-name router name params)]
      (-> (case (get-in match [:data :req-method])
-           :GET (do (println match)
-                    (fetch/get (:path match)))
+           :GET (do ;(println match)
+                  (fetch/get (:path match)))
            :POST (fetch/post (:path match)
                              {:body (prn-str data)}))
          (.then (fn [resp]
                   (-> resp
                       :body)))
          (.then (fn [data]
-                  (println "DATA pre conver: " data)
+                  ;(println "DATA pre conver: " data)
                   (rf/dispatch [event-id (read-string data)]))))
      (throw (js/Error. (str "api-call error: " name " does not match a defined route."))))))
 
@@ -131,6 +199,16 @@
  (fn [db _]
    (:route db)))
 
+(rf/reg-sub
+ :groupings
+ (fn [db _]
+   (:groupings db)))
+
+(rf/reg-sub
+ :collapsed-groups
+ (fn [db _]
+   (:collapsed-groups db)))
+
 ;;##########################
 ;; Layer 3 Subs
 ;;##########################
@@ -140,14 +218,15 @@
  (fn [_]
    [(rf/subscribe [:items]) (rf/subscribe [:active-filters])])
  (fn [[items active-filters] _]
-   (filter #(some (into #{} (:tags %)) active-filters) items)))
+  ;; (filter #(some (into #{} (:tags %)) active-filters) items)))
+   items))
 
 (rf/reg-sub
  :page
  (fn []
    (rf/subscribe [:route]))
  (fn [route _]
-   (println (str "reg-sub page: " route))
+   ;(println (str "reg-sub page: " route))
    (if-let [match (r/match-by-path router route)]
      [(get-in match [:data :name]) (:path-params match)]
      [:pages/home {}])))
@@ -157,12 +236,28 @@
  (fn []
    (rf/subscribe [:tags]))
  (fn [tags]
-   (println "tag sub: type=" (first (keys tags)))
+   ;(println "tag sub: type=" (first (keys tags)))
    (->> tags
         keys
         (map name)
-        (map clojure.string/capitalize))))
+        (map #(as-> % $
+                (clojure.string/split $ #"-")
+                (map clojure.string/capitalize $)
+                (clojure.string/join " " $))))))
 
+(rf/reg-sub
+ :grouped-items
+ (fn []
+   [(rf/subscribe [:active-items]) (rf/subscribe [:groupings])])
+ (fn [[items groupings] _]
+   (group-data groupings items 0)))
+
+(rf/reg-sub
+ :flattened-items
+ (fn []
+   [(rf/subscribe [:grouped-items]) (rf/subscribe [:collapsed-groups])])
+ (fn [[grouped-items collapsed-groups] _]
+   (flatten-groups collapsed-groups grouped-items "")))
 
 
 ;;######################################################################
@@ -180,10 +275,10 @@
      [:h1 "Route 2  "]]))
 
 (defn Feed []
-  (let [items @(rf/subscribe [:active-items])]
+  (let [items @(rf/subscribe [:flattened-items])]
     [:div
      [:h1 "Feeds! Love em!"]
-     [:div (feed items)]]))
+     [:div (Grid-view items)]]))
 
 (defn tag [tag-name]
   [:div {:style {:background-color "#ADD8E6" :margin "5px" :width "fit-content"}} tag-name])
@@ -193,8 +288,6 @@
 ;;##############################################################
 
 (defn on-navigate [match]
-  (println "on nav")
-  (println match)
   (rf/dispatch [:navigated (:path match)]))
 
 
@@ -205,7 +298,6 @@
 (defn app []
   (let [[page params] @(rf/subscribe [:page])
         tags @(rf/subscribe [:tag-names])]
-    (println page)
     [:div
      [:div
       [:a {:href (rfe/href :pages/home)} "Home"]
