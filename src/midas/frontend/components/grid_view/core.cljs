@@ -4,16 +4,24 @@
 (def TEST_COLUMNS ["Description" "Amount" "Date" "Tags"])
 
 
-
-(defn item-rows [items]
-  (for [item items]
-
-    ^{:key (str (:id item))}
-    [:tr
-     [:td (:description item)]
-     [:td (:amount item)]
-     [:td (:date item)]
-     [:td (clojure.string/join ", " (:tags item))]]))
+(defn group-header-comp [{:keys [g-name g-val cnt collapsed?]}]
+  [:div {:style {:display "flex"
+                 :flex-direction "row"
+                 :min-width "300px"
+                 :align-items "center"
+                 :justify-content "space-between"}}
+   [:div {:style {:font-size "xx-large"
+                  :padding-left "15px"}}
+    (if collapsed? ">" "v")]
+   [:div {:style {:display "flex"
+                  :flex-direction "column"
+                  :width "100%"
+                  :padding-left "15px"}}
+    [:p g-name]
+    [:p g-val]]
+   [:div {:style {:display "flex" :flex-direction "row" :padding-right "15px"}}
+    [:p "Count:"]
+    [:p cnt]]])
 
 (defn item-row [item]
   ^{:key (str (:id item))}
@@ -31,14 +39,14 @@
   ^{:key (str group-header)}
   [:tr {:style {:font-weight "bold" :background-color (if (:collapsed? group-header) "red" "green")}
         :on-click #(rf/dispatch [:toggle-group-header (:id group-header)])}
-   [:td (str (:name group-header) " " (:g-val group-header))]
+   [:td (group-header-comp group-header)]
    [:td {:colspan 3}]])
 
 
 
 (defn Grid-view [data]
   [:div
-   [:table
+   [:table {:cellspacing "0"}
     [:thead
      [:tr
       (for [column TEST_COLUMNS]
@@ -46,7 +54,6 @@
         [:th column])]]
     [:tbody
      (map (fn [row]
-            (println "row=" row)
             (case (:type row)
               :item (item-row row)
               :spacer (spacer-row row)

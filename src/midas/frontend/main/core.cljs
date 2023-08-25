@@ -5,8 +5,11 @@
             [reitit.frontend.easy :as rfe]
             [lambdaisland.fetch :as fetch]
             [cljs.reader :refer [read-string]]
+            [clojure.set :refer [subset?]]
             [midas.frontend.components.itemFeed.core :refer [feed]]
             [midas.frontend.components.grid-view.core :refer [Grid-view]]
+            [midas.frontend.components.misc.modal :refer [Modal]]
+            [midas.frontend.components.tabs.groups-tab :refer [Groups-tab]]
             [midas.router.core :refer [routes]]))
 
 ;; define your app data so that it doesn't get over-written on reload
@@ -36,7 +39,6 @@
 ;;######################################################################
 
 (defn group-data [grp-preds items depth]
-  (println "group-data: " grp-preds " " items " " depth)
   (if (empty? grp-preds)
     {:type :list
      :depth depth
@@ -44,13 +46,13 @@
     (let [[[k pred dir] & rst] grp-preds]
       {:type :group
        :depth depth
-       :name k
+       :g-name k
        :data (->> (group-by pred items)
                   (sort-by (fn [[k _]] k))
                   (map (fn [[k v]]
                          [{:g-val k
                            :depth (inc depth)
-                           :count (count v)
+                           :cnt (count v)
                            :sum (apply + (map :amount v))}
                           (group-data rst v (inc depth))])))})))
 
@@ -59,7 +61,7 @@
    :depth depth})
 
 (defn group-row [g-vals n id collapsed?]
-  (merge {:name n
+  (merge {:g-name n
           :type :group-header
           :id id
           :collapsed? collapsed?}
@@ -75,10 +77,10 @@
       (clojure.string/split #"-")
       second))
 
-(def g-preds [["Year" #(year (:date %)) :asc]
-              ["Month" #(month (:date %)) :asc]])
+(def g-preds [[:year #(year (:date %)) :asc]
+              [:month #(month (:date %)) :asc]])
 
-(defn flatten-groups [collapsed? groups id-prefix]
+(defn flatten-groups [collapsed? groups id-prefix-map]
   (if (= :list (:type groups))
 
     (concat (map #(assoc % :depth (:depth groups) :type :item)
@@ -87,12 +89,15 @@
     (let [data (:data groups)]
       (concat
        (mapcat (fn [[g-data group]]
-                 (let [id (str id-prefix (:g-val g-data))]
-                   (if (contains? collapsed? id)
-                     [(group-row g-data (:name groups) id true)]
-                     (concat [(group-row g-data (:name groups) id false)] (flatten-groups collapsed? group id)))))
+                 (let [id-map (merge id-prefix-map {(:g-name groups) (:g-val g-data)})]
+                   (if (contains? collapsed? id-map)
+                     [(group-row g-data (:g-name groups) id-map true)]
+                     (concat [(group-row g-data (:g-name groups) id-map false)] (flatten-groups collapsed? group id-map)))))
                data)
        [(spacer-row (:depth groups))]))))
+
+(defn vec-remove [i v]
+  (into (subvec v 0 i) (subvec v (inc i))))
 
 ;;######################################################################
 ;; Event Handlers
@@ -104,11 +109,12 @@
    {:db {:items BIG_DUMMY_DATA
          :active-filters [:coffee :food :groceries :atm]
          :tags {:tada {} :naha {}}
-         :groupings g-preds
+         :active-groups g-preds
+         :possible-groups {:date :date :tags :tags :amount :amount :description :description :year year :month month}
          :collapsed-groups #{}
+         :modals {}
          :route "/"}
-    :fx [;[:dispatch [:api-call :api/read-line-items {} nil :update-items]]
-         [:dispatch [:api-call :api/read-tags {} nil :update-tags]]]}))
+    :fx [[:dispatch [:api-call :api/read-tags {} nil :update-tags]]]}))
 
 (rf/reg-event-db
  :update-items
@@ -141,6 +147,33 @@
    (if (contains? (:collapsed-groups db) id)
      (update db :collapsed-groups disj id)
      (update db :collapsed-groups conj id))))
+
+(rf/reg-event-fx
+ :remove-group
+ (fn [{:keys [db]} [_ indx]]
+   {:db (update db :active-groups (partial vec-remove indx))
+    :fx [[:dispatch [:normalize-collapsed-groups]]]}))
+
+(rf/reg-event-fx
+ :update-group
+ (fn [{:keys [db]} [_ indx g-name]]
+   {:db (update db :active-groups assoc indx [g-name (get-in db [:possible-groups g-name]) :asc])
+    :fx [[:dispatch [:normalize-collapsed-groups]]]}))
+
+(rf/reg-event-db
+ :add-group
+ (fn [db [_ g-id]]
+   (update db :active-groups conj [g-id (get-in db [:possible-groups g-id]) :asc])))
+
+(rf/reg-event-db
+ :normalize-collapsed-groups
+ (fn [db [_]]
+   (let [active-groups (:active-groups db)
+         active-g-names (into #{} (map first active-groups))]
+     (update db :collapsed-groups (fn [c]
+                                    (->> c
+                                         (filter #(subset? % active-g-names)) ;TODO: ignores reordering
+                                         (into #{})))))))
 
 ;;######################################################################
 ;; Effect Handlers
@@ -200,14 +233,19 @@
    (:route db)))
 
 (rf/reg-sub
- :groupings
+ :active-groups
  (fn [db _]
-   (:groupings db)))
+   (:active-groups db)))
 
 (rf/reg-sub
  :collapsed-groups
  (fn [db _]
    (:collapsed-groups db)))
+
+(rf/reg-sub
+ :possible-groups
+ (fn [db _]
+   (:possible-groups db)))
 
 ;;##########################
 ;; Layer 3 Subs
@@ -248,7 +286,7 @@
 (rf/reg-sub
  :grouped-items
  (fn []
-   [(rf/subscribe [:active-items]) (rf/subscribe [:groupings])])
+   [(rf/subscribe [:active-items]) (rf/subscribe [:active-groups])])
  (fn [[items groupings] _]
    (group-data groupings items 0)))
 
@@ -257,12 +295,19 @@
  (fn []
    [(rf/subscribe [:grouped-items]) (rf/subscribe [:collapsed-groups])])
  (fn [[grouped-items collapsed-groups] _]
-   (flatten-groups collapsed-groups grouped-items "")))
+   (flatten-groups collapsed-groups grouped-items {})))
 
 
 ;;######################################################################
 ;; COMPONENTS
 ;;######################################################################
+
+(defn test-modal [component]
+  (let [modal-show? @(rf/subscribe [:modal/show? :test])]
+    [:div
+     [:button {:on-click #(rf/dispatch [:modal/show :test])} "Show Modal"]
+     (if modal-show?
+       (Modal :test component))]))
 
 (defn r1 []
   (let []
@@ -277,11 +322,15 @@
 (defn Feed []
   (let [items @(rf/subscribe [:flattened-items])]
     [:div
+     (test-modal (Groups-tab))
+
      [:h1 "Feeds! Love em!"]
      [:div (Grid-view items)]]))
 
 (defn tag [tag-name]
   [:div {:style {:background-color "#ADD8E6" :margin "5px" :width "fit-content"}} tag-name])
+
+
 
 ;;##############################################################
 ;;
@@ -307,6 +356,7 @@
      [:div {:style {:margin "5px"}} (for [tag-name tags]
                                       ^{:key tag-name}
                                       (tag tag-name))]
+
      [:div (case page
              :pages/home (r1)
              :pages/feed (Feed)
