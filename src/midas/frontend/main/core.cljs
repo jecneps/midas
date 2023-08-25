@@ -113,6 +113,7 @@
          :possible-groups {:date :date :tags :tags :amount :amount :description :description :year year :month month}
          :collapsed-groups #{}
          :modals {}
+         :prefix-tree-options {}
          :route "/"}
     :fx [[:dispatch [:api-call :api/read-tags {} nil :update-tags]]]}))
 
@@ -296,6 +297,22 @@
    [(rf/subscribe [:grouped-items]) (rf/subscribe [:collapsed-groups])])
  (fn [[grouped-items collapsed-groups] _]
    (flatten-groups collapsed-groups grouped-items {})))
+
+(rf/reg-sub
+ :unused-groups
+ (fn []
+   [(rf/subscribe [:active-groups]) (rf/subscribe [:possible-groups])])
+ (fn [[active-groups possible-groups] _]
+   (let [active (into #{} (map first active-groups))
+         possible (into #{} (map first possible-groups))]
+     (clojure.set/difference possible active))))
+
+(rf/reg-sub
+ :unused-options
+ (fn []
+   (rf/subscribe [:unused-groups]))
+ (fn [unused-groups]
+   (map #(vector % (name %)) unused-groups)))
 
 
 ;;######################################################################

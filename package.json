@@ -1,5 +1,6 @@
 {
     "dependencies": {
+        "highlight.js": "11.5.1",
         "react": "^16.14.0",
         "react-dom": "^16.0.0",
         "shadow-cljs": "^2.0.80"
