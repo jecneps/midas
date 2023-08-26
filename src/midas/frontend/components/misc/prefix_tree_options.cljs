@@ -11,8 +11,9 @@
 ;; options are [key str] pairs
 
 (rf/reg-event-fx
- :pto/init-pto
+ :pto/init
  (fn [{:keys [db]} [_ id options]]
+   (println "pto init: id=" id " options=" options)
    {:db (assoc-in db [:prefix-tree-options id] {:options options
                                                 :cur-text ""
                                                 :selection nil
@@ -32,6 +33,11 @@
  :pto/option-selected
  (fn [db [_ id option]]
    (assoc-in db [:prefix-tree-options id :selection] option)))
+
+(rf/reg-event-db
+ :pto/remove
+ (fn [db [_ id]]
+   (update db :prefix-tree-options dissoc id)))
 
 
 ;;#######################################################################
@@ -66,18 +72,28 @@
 
 
 (defn option-row [id [_ text :as option]]
-  [:div {:on-click #(rf/dispatch [:pto/option-selected id option])}
-   [:p text]])
+  [:div {:class "pto-option"
+         :on-click #(rf/dispatch [:pto/option-selected id option])}
+   [:p (clojure.string/capitalize text)]])
+
+(defn no-result []
+  [:div {:class "pto-no-results"}
+   [:p "No results"]])
 
 (defn Prefix-options [id]
-  (let [matches @(rf/subscribe [:pto/matching-options id])]
-    ;(println "pto comp, matches: " matches)
-    [:div {:style {:display "flex" :flex-direction "column"}}
-     [:div {:display "flex" :flex-direction "row"}
+  (let [matches @(rf/subscribe [:pto/matching-options id])
+        cur-text @(rf/subscribe [:pto/cur-text id])]
+    (println "Prefix OPts: id=" id)
+    [:div {:class "pto-container"}
+     [:div {:style {:display "flex" :flex-direction "row"}}
       [:input {:type "text"
                :on-change #(rf/dispatch [:pto/text-changed id (-> % .-target .-value)])
-               :value @(rf/subscribe [:pto/cur-text id])}]
-      [:div {:on-click #(rf/dispatch [:pto/clear-text id])}
-       "X"]]
-     [:div
-      (map (partial option-row id) matches)]]))
+               :value cur-text
+               :placeholder "Find a field"}]
+      (if (not (clojure.string/blank? cur-text))
+        [:div {:on-click #(rf/dispatch [:pto/clear-text id])}
+         "X"])]
+     [:div {:class "pto-options"}
+      (map (partial option-row id) matches)
+      (if (empty? matches)
+        (no-result))]]))

@@ -20,4 +20,10 @@
          ;; serve the public directory over http at port 8700
          :http-root    "resources/public"
          :http-port    8700
-         :preloads     [devtools.preload]}}}}
+         :preloads     [devtools.preload day8.re-frame-10x.preload]}
+        
+        :dev
+        {:compiler-options
+         {:closure-defines
+          {re-frame.trace.trace-enabled?        true
+           day8.re-frame.tracing.trace-enabled? true}}}}}}

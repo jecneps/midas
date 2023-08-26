@@ -10,7 +10,9 @@
                  [metosin/reitit "0.5.11"]
                  [re-frame "1.3.0"]
                  [lambdaisland/fetch "1.3.74"]
-                 [day8.re-frame/re-frame-10x "1.6.0"]]
+                 [borkdude/edamame "1.3.23"]
+                 [vimsical/re-frame-utils "0.1.0"]
+                 [day8.re-frame/re-frame-10x "1.8.1"]]
   :main ^:skip-aot midas.backend.main.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

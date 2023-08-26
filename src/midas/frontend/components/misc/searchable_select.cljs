@@ -1,39 +1,28 @@
 (ns midas.frontend.components.misc.searchable-select
   (:require [re-frame.core :as rf]
-            [midas.frontend.components.misc.prefix-tree-options :refer [Prefix-options]]))
+            [midas.frontend.components.misc.prefix-tree-options :refer [Prefix-options]]
+            [midas.frontend.components.misc.modal :refer [Modal]]))
 
 
-;####################################################
-; Imagining the top level for a sec
-;####################################################
-
-;; (defn Group-Tab []
-;;   (let [active-groups @(rf/subscribe [:active-groups])
-;;         show-modal? @(rf/subscribe [:modal/show? :groups-tab-modal])]
-;;     [:div 
-;;      [:div (if (empty? active-groups) 
-;;              "Group" 
-;;              (str "Grouped by " (count active-groups) " field"))]
-;;      (if show-modal?
-;;        (Modal :groups-tab-modal (Groups-tab)))]))
-
-;####################################################
-;
-;####################################################
-
-;; (defn test-select [options v event id]
-;;   (let [show-modal? @(rf/subscribe [:modal/show? id])]
-;;     [:div
-;;      [:div v]
-;;      [:div "V"]
-;;      (if show-modal?
-;;        (Prefix-options))]))
 
 
-;TODO: do the searchable part
-(defn Searchable-select [options v event indx]
-  [:select {:value v
-            :on-change #(rf/dispatch [event indx (-> % .-target .-value keyword)])}
-   (for [option options]
-     ^{:key option}
-     [:option {:value option} option])])
+
+(defn Searchable-select [id cur-option options on-select-event]
+  (let [show-modal? @(rf/subscribe [:modal/show? id])
+        selection @(rf/subscribe [:pto/selection id])]
+    (println "SS: selection=" selection)
+    [:div {:class "searchable-select-container modal-parent"
+           :on-click (if show-modal?
+                       (fn [_] nil)
+                       (fn [_]
+                         (rf/dispatch [:pto/init id options])
+                         (rf/dispatch [:modal/show id])))}
+     [:div (second cur-option)]
+     [:div "V"]
+     (cond
+       (and (nil? selection) show-modal?) (Modal id show-modal? (Prefix-options id))
+       (and (nil? selection) (not show-modal?)) nil
+       (and (not (nil? selection)) show-modal?) (do
+                                                  (rf/dispatch [:modal/close id])
+                                                  (rf/dispatch [:pto/remove id])
+                                                  (rf/dispatch (conj on-select-event (first selection)))))]))

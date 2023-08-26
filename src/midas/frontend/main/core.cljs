@@ -39,11 +39,13 @@
 ;;######################################################################
 
 (defn group-data [grp-preds items depth]
+  (println "group-data: " grp-preds depth)
   (if (empty? grp-preds)
     {:type :list
      :depth depth
      :data items}
     (let [[[k pred dir] & rst] grp-preds]
+      (println "group-data: " k pred dir)
       {:type :group
        :depth depth
        :g-name k
@@ -77,8 +79,7 @@
       (clojure.string/split #"-")
       second))
 
-(def g-preds [[:year #(year (:date %)) :asc]
-              [:month #(month (:date %)) :asc]])
+(def g-preds [[:year #(year (:date %)) :asc]])
 
 (defn flatten-groups [collapsed? groups id-prefix-map]
   (if (= :list (:type groups))
@@ -98,6 +99,12 @@
 
 (defn vec-remove [i v]
   (into (subvec v 0 i) (subvec v (inc i))))
+
+(defn all-group-headers [groups]
+  (->> (flatten-groups #{} groups {})
+       (filter #(= :group-header (:type %)))
+       (map :id)
+       (into #{})))
 
 ;;######################################################################
 ;; Event Handlers
@@ -175,6 +182,16 @@
                                     (->> c
                                          (filter #(subset? % active-g-names)) ;TODO: ignores reordering
                                          (into #{})))))))
+
+(rf/reg-event-db
+ :group/collapse-all
+ (fn [db [_ collapsed-groups]]
+   (assoc db :collapsed-groups collapsed-groups)))
+
+(rf/reg-event-db
+ :group/expand-all
+ (fn [db [_]]
+   (assoc db :collapsed-groups #{})))
 
 ;;######################################################################
 ;; Effect Handlers
@@ -314,17 +331,24 @@
  (fn [unused-groups]
    (map #(vector % (name %)) unused-groups)))
 
+(rf/reg-sub
+ :group/all-group-headers
+ (fn []
+   (rf/subscribe [:grouped-items]))
+ (fn [grouped-items]
+   (all-group-headers grouped-items)))
+
 
 ;;######################################################################
 ;; COMPONENTS
 ;;######################################################################
 
 (defn test-modal [component]
-  (let [modal-show? @(rf/subscribe [:modal/show? :test])]
-    [:div
+  (let [show-modal? @(rf/subscribe [:modal/show? :test])]
+    [:div {:class "modal-parent"}
      [:button {:on-click #(rf/dispatch [:modal/show :test])} "Show Modal"]
-     (if modal-show?
-       (Modal :test component))]))
+     (if show-modal?
+       (Modal :test show-modal? component))]))
 
 (defn r1 []
   (let []
@@ -340,7 +364,6 @@
   (let [items @(rf/subscribe [:flattened-items])]
     [:div
      (test-modal (Groups-tab))
-
      [:h1 "Feeds! Love em!"]
      [:div (Grid-view items)]]))
 
